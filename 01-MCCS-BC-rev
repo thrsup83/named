@@ -1,0 +1,16 @@
+01 #################################################################################################
+
+select distinct
+    SMS_R_SYSTEM.ResourceID,
+    SMS_R_SYSTEM.Name,
+    SMS_R_SYSTEM.Client
+from SMS_R_SYSTEM
+where
+    SMS_R_SYSTEM.ResourceId in (
+        select ResourceId
+        from SMS_G_System_ADD_REMOVE_PROGRAMS_64
+        where DisplayName = "Carbon Black Cloud Sensor 64-bit"
+        and Version != "4.0.3.2029"
+    )
+
+02 #################################################################################################
