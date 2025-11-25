@@ -21,3 +21,26 @@ and SMS_R_System.ResourceId not in (
 )
 
 02 #############################################################
+select distinct
+    SMS_R_SYSTEM.ResourceID,
+    SMS_R_SYSTEM.ResourceType,
+    SMS_R_SYSTEM.Name,
+    SMS_R_SYSTEM.SMSUniqueIdentifier,
+    SMS_R_SYSTEM.ResourceDomainORWorkgroup,
+    SMS_R_SYSTEM.Client
+from SMS_R_SYSTEM
+where
+    SMS_R_SYSTEM.ResourceId not in (
+        select ARP.ResourceId
+        from SMS_G_System_ADD_REMOVE_PROGRAMS as ARP
+        where ARP.DisplayName like "SolarWinds%"
+        and ARP.Version = "125.2.3106.1"
+    )
+    and SMS_R_SYSTEM.ResourceId not in (
+        select ARP64.ResourceId
+        from SMS_G_System_ADD_REMOVE_PROGRAMS_64 as ARP64
+        where ARP64.DisplayName like "SolarWinds%"
+        and ARP64.Version = "125.2.3106.1"
+    )
+
+03 #############################################################
