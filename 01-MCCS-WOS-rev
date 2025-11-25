@@ -67,3 +67,24 @@ or SMS_R_SYSTEM.ResourceId in (
 )
 
 04 #############################################################
+
+select distinct
+    SMS_R_SYSTEM.ResourceID,
+    SMS_R_SYSTEM.Name,
+    SMS_R_SYSTEM.Client
+from SMS_R_SYSTEM
+where
+    SMS_R_SYSTEM.ResourceId in (
+        select ResourceId
+        from SMS_G_System_ADD_REMOVE_PROGRAMS
+        where DisplayName like "SolarWinds Agent%"
+        and Version != "2025.2.1.3106"
+    )
+    or SMS_R_SYSTEM.ResourceId in (
+        select ResourceId
+        from SMS_G_System_ADD_REMOVE_PROGRAMS_64
+        where DisplayName like "SolarWinds Agent%"
+        and Version != "2025.2.1.3106"
+    )
+
+05 #############################################################
