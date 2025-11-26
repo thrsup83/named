@@ -88,3 +88,102 @@ try {
 
 
 03 - ##################################################
+
+
+
+
+$TargetServer     = 'LABWKS02'
+$Hours            = 1
+$IncludeFailures  = $true
+
+$since = (Get-Date).AddHours(-$Hours)
+
+$LogonTypeNames = @{
+  '2'  = 'Interactive (console)'
+  '3'  = 'Network (SMB/WinRM/etc.)'
+  '4'  = 'Batch'
+  '5'  = 'Service'
+  '7'  = 'Unlock'
+  '8'  = 'NetworkCleartext'
+  '9'  = 'NewCredentials (runas)'
+  '10' = 'RemoteInteractive (RDP/TS)'
+  '11' = 'CachedInteractive'
+}
+
+$LogonFailMap = @{
+  '0xC000006A'  = 'Incorrect password'
+  '0xC0000064'  = 'User does not exist'
+  '0xC0000234'  = 'Account locked'
+  '0xC0000070'  = 'Outside allowed logon hours'
+  '0xC0000072'  = 'Account disabled'
+  '0xC0000193'  = 'Account expired'
+  '0xC0000224'  = 'Must change password'
+  '0xC0000133'  = 'Time skew (clock)'
+}
+
+function Get-EventDataValue {
+  param($EventRecord, $Name)
+  try {
+    $xml = [xml]$EventRecord.ToXml()
+    return ($xml.Event.EventData.Data | Where-Object { $_.Name -eq $Name }).'#text'
+  } catch { return $null }
+}
+
+$ids = @(4624) + ($(if($IncludeFailures){@(4625)}else{@()}))
+
+$events = Get-WinEvent -ComputerName $TargetServer -FilterHashtable @{
+  LogName   = 'Security'
+  Id        = $ids
+  StartTime = $since
+} -ErrorAction Stop
+
+$rows = foreach ($e in $events) {
+  $eventId = $e.Id
+
+  $user     = Get-EventDataValue $e 'TargetUserName'
+  $domain   = Get-EventDataValue $e 'TargetDomainName'
+  $ip       = Get-EventDataValue $e 'IpAddress'
+  $wk       = Get-EventDataValue $e 'WorkstationName'
+  $lt       = Get-EventDataValue $e 'LogonType'
+  $pack     = Get-EventDataValue $e 'AuthenticationPackageName'
+  $ltName   = if ($LogonTypeNames.ContainsKey($lt)) { $LogonTypeNames[$lt] } else { "Type $lt" }
+
+  if ($user -match '\$$') { continue }
+  if ($user -in @('SYSTEM','LOCAL SERVICE','NETWORK SERVICE')) { continue }
+  if ($user -like 'DWM-*' -or $user -like 'UMFD-*') { continue }
+  if ($domain -match '^(?i)(NT AUTHORITY|AUTORIDADE NT)$') { continue }
+  if ($domain -and ($domain -ieq $TargetServer)) { continue }
+
+  $acct = if ($domain) { "$domain\$user" } else { $user }
+
+  $outcome = switch ($eventId) {
+    4624 { 'Success' }
+    4625 {
+      $status   = Get-EventDataValue $e 'Status'
+      $sub      = Get-EventDataValue $e 'SubStatus'
+      $reason   = $LogonFailMap[$sub]; if (-not $reason) { $reason = $LogonFailMap[$status] }
+      if (-not $reason) { $reason = "Failure (Status=$status SubStatus=$sub)" }
+      $reason
+    }
+  }
+
+  [pscustomobject]@{
+    TimeCreated = $e.TimeCreated
+    EventID     = $eventId
+    Outcome     = $outcome
+    Account     = $acct
+    LogonType   = $ltName
+    IpAddress   = $ip
+    Workstation = $wk
+    AuthPackage = $pack
+  }
+}
+
+$rows |
+  Sort-Object TimeCreated -Descending |
+  Format-Table -AutoSize
+
+
+
+
+04 - ##################################################
