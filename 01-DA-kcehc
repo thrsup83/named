@@ -34,3 +34,57 @@ try {
 }
 
 02 - ##################################################
+
+
+
+$TargetUser = "test"
+
+# XML Query: Filtra na origem. Zero peso de CPU.
+# Busca ID 4625 (Logon Failure) OU 4771 (Kerberos Failure) apenas para o usuario $TargetUser
+$Query = "*[System[(EventID=4625 or EventID=4771)] and EventData[Data[@Name='TargetUserName']='$TargetUser']]"
+
+Write-Host "Searching logs on DC (Safe Mode)..." -ForegroundColor Cyan
+
+try {
+    # MaxEvents 30 para nao poluir a tela. O filtro XPath garante performance.
+    $Events = Get-WinEvent -LogName Security -FilterXPath $Query -ErrorAction Stop -MaxEvents 30
+    
+    $Results = foreach ($E in $Events) {
+        $xml = [xml]$E.ToXml()
+        
+        # Extrai IP e Status dependendo do evento
+        if ($E.Id -eq 4771) {
+            $IP = $xml.Event.EventData.Data | Where-Object {$_.Name -eq 'IpAddress'} | Select-Object -ExpandProperty '#text'
+            $Code = $xml.Event.EventData.Data | Where-Object {$_.Name -eq 'FailureCode'} | Select-Object -ExpandProperty '#text'
+        } else {
+            $IP = $xml.Event.EventData.Data | Where-Object {$_.Name -eq 'IpAddress'} | Select-Object -ExpandProperty '#text'
+            $Code = $xml.Event.EventData.Data | Where-Object {$_.Name -eq 'SubStatus'} | Select-Object -ExpandProperty '#text'
+        }
+
+        # Traducao rapida dos codigos comuns de erro de senha
+        $Reason = switch ($Code) {
+            '0x18' { 'Bad Password (Kerberos)' }
+            '0xc000006a' { 'Bad Password (NTLM)' }
+            '0x12' { 'Account Disabled/Locked/Expired' }
+            '0xc0000234' { 'Account Locked' }
+            '0xc0000064' { 'User Not Found' }
+            Default { "Error Code: $Code" }
+        }
+
+        [pscustomobject]@{
+            Time      = $E.TimeCreated.ToString("HH:mm:ss")
+            EventID   = $E.Id
+            User      = $TargetUser
+            SourceIP  = $IP.Replace("::ffff:","") # Limpa formato IPv6 se houver
+            Reason    = $Reason
+        }
+    }
+
+    $Results | Format-Table -AutoSize
+
+} catch {
+    Write-Host "No failure events found for user '$TargetUser' on this DC." -ForegroundColor Green
+}
+
+
+03 - ##################################################
