@@ -1,0 +1,36 @@
+01 - ##################################################
+
+
+
+$SourceServer = "SERVER-NAME"
+
+$Query = "*[System[EventID=4625] and EventData[Data[@Name='WorkstationName']='$SourceServer']]"
+
+try {
+    $Events = Get-WinEvent -LogName Security -FilterXPath $Query -ErrorAction Stop -MaxEvents 20
+    
+    foreach ($Event in $Events) {
+        $xml = [xml]$Event.ToXml()
+        $User = $xml.Event.EventData.Data | Where-Object {$_.Name -eq 'TargetUserName'} | Select-Object -ExpandProperty '#text'
+        $SubStatus = $xml.Event.EventData.Data | Where-Object {$_.Name -eq 'SubStatus'} | Select-Object -ExpandProperty '#text'
+        $IP = $xml.Event.EventData.Data | Where-Object {$_.Name -eq 'IpAddress'} | Select-Object -ExpandProperty '#text'
+        
+        $StatusMsg = switch ($SubStatus) {
+            "0xc000006a" { "BAD PASSWORD" }
+            "0xc0000064" { "USER DOES NOT EXIST" }
+            "0xc0000234" { "ACCOUNT LOCKED" }
+            "0xc0000071" { "PASSWORD EXPIRED" }
+            Default { "Other ($SubStatus)" }
+        }
+
+        Write-Host "---------------------------------------------------"
+        Write-Host "Time:   " $Event.TimeCreated
+        Write-Host "User:   " $User -ForegroundColor Cyan
+        Write-Host "Source: " "$SourceServer ($IP)"
+        Write-Host "Status: " $StatusMsg -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "No failure events found coming from '$SourceServer' on this DC." -ForegroundColor Green
+}
+
+02 - ##################################################
